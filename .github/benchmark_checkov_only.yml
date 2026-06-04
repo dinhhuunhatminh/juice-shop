@@ -1,0 +1,50 @@
+name: Benchmark - ONLY CHECKOV
+on: workflow_dispatch
+
+jobs:
+  run_isolated_checkov:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10 # Cầu chì bảo vệ: Tự ngắt sau 10 phút nếu Checkov bị treo
+    steps:
+      - name: Setup Môi trường
+        uses: actions/setup-python@v5
+        with: { python-version: '3.10' }
+
+      - name: Tải OWASP Juice Shop
+        run: git clone --depth 1 https://github.com/juice-shop/juice-shop.git ./target_app
+
+      - name: Cài đặt, Chạy và Đo lường Checkov
+        run: |
+          cd target_app
+          pip install -q checkov jq
+          
+          echo "🚀 Bắt đầu chạy Checkov (Đang quét toàn bộ thư mục...)"
+          
+          # Khởi tạo đồng hồ bấm giờ và chạy
+          START=$(date +%s)
+          /usr/bin/time -v checkov -d . -o json > report.json 2> time_log.txt || true
+          END=$(date +%s)
+          
+          # Trích xuất dữ liệu
+          DUR=$((END - START))
+          RAM_KB=$(grep "Maximum resident set size" time_log.txt | awk '{print $6}')
+          
+          if [ -z "$RAM_KB" ]; then RAM_KB=0; fi
+          RAM_MB=$((RAM_KB / 1024))
+          
+          if [ -s report.json ]; then
+            ISSUES=$(jq '.results.failed_checks | length' report.json 2>/dev/null || echo 0)
+          else
+            ISSUES="Không có kết quả (Bị treo hoặc Crash)"
+          fi
+          
+          echo "========================================================"
+          echo "   KẾT QUẢ CHẠY ĐỘC LẬP CỦA CHECKOV TRÊN JUICE SHOP"
+          echo "========================================================"
+          echo "Thời gian thực tế : $DUR giây"
+          echo "Đỉnh RAM tiêu thụ : $RAM_MB MB"
+          echo "Lỗi IaC tìm thấy  : $ISSUES"
+          echo "========================================================"
+          
+          echo ">> THÔNG TIN THÊM (Log tài nguyên từ nhân Linux):"
+          cat time_log.txt
