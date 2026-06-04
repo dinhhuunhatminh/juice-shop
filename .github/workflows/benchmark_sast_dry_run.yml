@@ -137,16 +137,16 @@ jobs:
           ]
 
           print('='*80)
-          print(f'   BÁO CÁO KẾT QUẢ BENCHMARK SAST TRÊN OWASP JUICE SHOP (JS/TS)')
-          print(f'   Tổng số lỗi thực tế (Ground Truth) dùng để chấm điểm: {TOTAL_VULNS_TRUTH}')
+          print('   BÁO CÁO KẾT QUẢ BENCHMARK SAST TRÊN OWASP JUICE SHOP (JS/TS)')
+          print('   Tổng số lỗi thực tế (Ground Truth) dùng để chấm điểm: {}'.format(TOTAL_VULNS_TRUTH))
           print('='*80)
-          print(f'{'TÊN CÔNG CỤ':<25} | {'LỖI TÌM THẤY':<15} | {'RAM (MB)':<10} | {'THỜI GIAN (s)':<15} | {'ĐIỂM F1_SCORE':<15}')
+          print('{:<25} | {:<15} | {:<10} | {:<15} | {:<15}'.format('TÊN CÔNG CỤ', 'LỖI TÌM THẤY', 'RAM (MB)', 'THỜI GIAN (s)', 'ĐIỂM F1_SCORE'))
           print('-'*80)
 
           for name, env_prefix in tools:
-              issues_found = int(os.environ.get(f'{env_prefix}_ISSUES', 0))
-              ram = int(float(os.environ.get(f'{env_prefix}_RAM', 0)))
-              dur = float(os.environ.get(f'{env_prefix}_DUR', 0))
+              issues_found = int(os.environ.get(env_prefix + '_ISSUES', 0))
+              ram = int(float(os.environ.get(env_prefix + '_RAM', 0)))
+              dur = float(os.environ.get(env_prefix + '_DUR', 0))
               
               # TÍNH TOÁN F1
               if issues_found == 0:
@@ -161,7 +161,7 @@ jobs:
                   recall = tp / (tp + fn) if (tp+fn) > 0 else 0
                   f1 = (2 * precision * recall) / (precision + recall) if (precision+recall) > 0 else 0
               
-              print(f'{name:<25} | {issues_found:<15} | {ram:<10} | {dur:<15.2f} | {round(f1, 2):<15}')
+              print('{:<25} | {:<15} | {:<10} | {:<15.2f} | {:<15}'.format(name, issues_found, ram, dur, round(f1, 2)))
 
           print('='*80)
           print('📌 KẾT LUẬN THỰC NGHIỆM:')
