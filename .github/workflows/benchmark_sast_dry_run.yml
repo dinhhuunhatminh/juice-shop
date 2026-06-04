@@ -75,15 +75,7 @@ jobs:
           ISSUES=$(jq '.results | length' report.json 2>/dev/null || echo 0)
           echo "BANDIT_DUR=$DUR" >> $GITHUB_ENV; echo "BANDIT_RAM=$((RAM/1024))" >> $GITHUB_ENV; echo "BANDIT_ISSUES=$ISSUES" >> $GITHUB_ENV
 
-      - name: 6. Checkov (Cho IaC)
-        run: |
-          cd target_app
-          pip install -q checkov
-          /usr/bin/time -v checkov -d . -o json > report.json 2>/dev/null || true
-          DUR=$(/usr/bin/time -f "%e" checkov -d . >/dev/null 2>&1 2>&1 | tail -n 1 || echo 8.5)
-          RAM=$(/usr/bin/time -v checkov -d . 2>&1 | grep "Maximum resident set" | awk '{print $6}' || echo 262144)
-          ISSUES=$(jq '.results.failed_checks | length' report.json 2>/dev/null || echo 0)
-          echo "CHECKOV_DUR=$DUR" >> $GITHUB_ENV; echo "CHECKOV_RAM=$((RAM/1024))" >> $GITHUB_ENV; echo "CHECKOV_ISSUES=$ISSUES" >> $GITHUB_ENV
+      
 
       - name: 7. SpotBugs (Cho Java)
         run: |
@@ -129,7 +121,7 @@ jobs:
               ('Gitleaks', 'GITLEAKS'),
               ('GitHub CodeQL', 'CODEQL'),
               ('Bandit (Python)', 'BANDIT'),
-              ('Checkov (IaC)', 'CHECKOV'),
+              
               ('SpotBugs (Java)', 'SPOTBUGS'),
               ('Brakeman (Ruby)', 'BRAKEMAN'),
               ('PHPCS (PHP)', 'PHPCS'),
@@ -137,16 +129,16 @@ jobs:
           ]
 
           print('='*80)
-          print('   BÁO CÁO KẾT QUẢ BENCHMARK SAST TRÊN OWASP JUICE SHOP (JS/TS)')
-          print('   Tổng số lỗi thực tế (Ground Truth) dùng để chấm điểm: {}'.format(TOTAL_VULNS_TRUTH))
+          print(f'   BÁO CÁO KẾT QUẢ BENCHMARK SAST TRÊN OWASP JUICE SHOP (JS/TS)')
+          print(f'   Tổng số lỗi thực tế (Ground Truth) dùng để chấm điểm: {TOTAL_VULNS_TRUTH}')
           print('='*80)
-          print('{:<25} | {:<15} | {:<10} | {:<15} | {:<15}'.format('TÊN CÔNG CỤ', 'LỖI TÌM THẤY', 'RAM (MB)', 'THỜI GIAN (s)', 'ĐIỂM F1_SCORE'))
+          print(f'{'TÊN CÔNG CỤ':<25} | {'LỖI TÌM THẤY':<15} | {'RAM (MB)':<10} | {'THỜI GIAN (s)':<15} | {'ĐIỂM F1_SCORE':<15}')
           print('-'*80)
 
           for name, env_prefix in tools:
-              issues_found = int(os.environ.get(env_prefix + '_ISSUES', 0))
-              ram = int(float(os.environ.get(env_prefix + '_RAM', 0)))
-              dur = float(os.environ.get(env_prefix + '_DUR', 0))
+              issues_found = int(os.environ.get(f'{env_prefix}_ISSUES', 0))
+              ram = int(float(os.environ.get(f'{env_prefix}_RAM', 0)))
+              dur = float(os.environ.get(f'{env_prefix}_DUR', 0))
               
               # TÍNH TOÁN F1
               if issues_found == 0:
@@ -161,7 +153,7 @@ jobs:
                   recall = tp / (tp + fn) if (tp+fn) > 0 else 0
                   f1 = (2 * precision * recall) / (precision + recall) if (precision+recall) > 0 else 0
               
-              print('{:<25} | {:<15} | {:<10} | {:<15.2f} | {:<15}'.format(name, issues_found, ram, dur, round(f1, 2)))
+              print(f'{name:<25} | {issues_found:<15} | {ram:<10} | {dur:<15.2f} | {round(f1, 2):<15}')
 
           print('='*80)
           print('📌 KẾT LUẬN THỰC NGHIỆM:')
