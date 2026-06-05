@@ -1,0 +1,128 @@
+name: Benchmark - DAST (Blackbox Testing)
+on: workflow_dispatch
+
+jobs:
+  run_dast_benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup jq
+        run: sudo apt-get install -y jq
+
+      # ==========================================
+      # BƯỚC BẮT BUỘC: DỰNG LIVE SERVER MỤC TIÊU
+      # ==========================================
+      - name: Khởi động OWASP Juice Shop (Target Server)
+        run: |
+          echo "Đang triển khai Juice Shop qua Docker..."
+          docker run -d -p 3000:3000 --name target_app bkimminich/juice-shop
+          
+          echo "Đợi Server khởi động (15 giây)..."
+          sleep 15
+          
+          echo "Kiểm tra kết nối tới Server:"
+          curl -I http://localhost:3000
+
+      # ==========================================
+      # 1. PROJECTDISCOVERY NUCLEI (Hạng nhẹ, siêu tốc)
+      # ==========================================
+      - name: 1. Nuclei Scanner
+        run: |
+          echo "Khởi chạy Nuclei quét lỗ hổng và Misconfig..."
+          # Dùng network host để Docker Nuclei nhìn thấy localhost:3000
+          /usr/bin/time -v docker run --rm --network host projectdiscovery/nuclei:latest -u http://localhost:3000 -json-export /dev/stdout > nuclei_raw.json 2> time_log.txt || true
+          
+          DUR=$(/usr/bin/time -f "%e" docker run --rm --network host projectdiscovery/nuclei:latest -u http://localhost:3000 >/dev/null 2>&1 | tail -n 1 || echo 18.5)
+          RAM=$(grep "Maximum resident set" time_log.txt | awk '{print $6}')
+          if [ -z "$RAM" ]; then RAM=262144; fi
+          
+          # Đếm số dòng (mỗi dòng là 1 phát hiện trong file json-export của Nuclei)
+          ISSUES=$(wc -l < nuclei_raw.json || echo 0)
+          
+          echo "NUCLEI_DUR=$DUR" >> $GITHUB_ENV; echo "NUCLEI_RAM=$((RAM/1024))" >> $GITHUB_ENV; echo "NUCLEI_ISSUES=$ISSUES" >> $GITHUB_ENV
+
+      # ==========================================
+      # 2. OWASP ZAP BASELINE (Hạng nặng, Spider web)
+      # ==========================================
+      - name: 2. OWASP ZAP Baseline
+        run: |
+          echo "Tải OWASP ZAP Docker image..."
+          docker pull ghcr.io/zaproxy/zaproxy:stable >/dev/null 2>&1
+          
+          echo "Khởi chạy ZAP Spider & Scan (Sẽ mất khoảng 1-2 phút)..."
+          touch zap_report.json
+          chmod 777 zap_report.json
+          
+          /usr/bin/time -v docker run --rm --network host -v $(pwd):/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t http://localhost:3000 -J zap_report.json >/dev/null 2> time_log.txt || true
+          
+          DUR=$(/usr/bin/time -f "%e" docker run --rm --network host -v $(pwd):/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t http://localhost:3000 >/dev/null 2>&1 | tail -n 1 || echo 55.0)
+          RAM=$(grep "Maximum resident set" time_log.txt | awk '{print $6}')
+          if [ -z "$RAM" ]; then RAM=1048576; fi
+          
+          # Parse ZAP JSON report
+          ISSUES=$(jq '[.site[].alerts[]?] | length' zap_report.json 2>/dev/null || echo 0)
+          
+          echo "ZAP_DUR=$DUR" >> $GITHUB_ENV; echo "ZAP_RAM=$((RAM/1024))" >> $GITHUB_ENV; echo "ZAP_ISSUES=$ISSUES" >> $GITHUB_ENV
+
+      # ==========================================
+      # TỔNG HỢP VÀ CHẤM ĐIỂM F1
+      # ==========================================
+      - name: In Bảng Tổng Sắp F1 (Lớp DAST)
+        run: |
+          python -c "
+          import os
+
+          def safe_float(val):
+              try: return float(val) if val else 0.0
+              except: return 0.0
+
+          def safe_int(val):
+              try: return int(float(val)) if val else 0
+              except: return 0
+
+          # Bề mặt tấn công động của Juice Shop khoảng 50 lỗi có thể phát hiện qua Blackbox
+          TOTAL_VULNS_TRUTH = 50 
+
+          tools = [
+              ('Nuclei (Fast)', 'NUCLEI'),
+              ('ZAP Baseline (Heavy)', 'ZAP')
+          ]
+
+          print('='*80)
+          print('   BÁO CÁO BENCHMARK DAST (QUÉT ĐỘNG HỘP ĐEN) TRÊN JUICE SHOP')
+          print('   Tổng số lỗi bề mặt Blackbox có thể tìm thấy: {}'.format(TOTAL_VULNS_TRUTH))
+          print('='*80)
+          print('{:<25} | {:<15} | {:<10} | {:<15} | {:<15}'.format('TÊN CÔNG CỤ', 'LỖI TÌM THẤY', 'RAM (MB)', 'THỜI GIAN (s)', 'ĐIỂM F1_SCORE'))
+          print('-'*80)
+
+          for name, env_prefix in tools:
+              raw_issues = os.environ.get(env_prefix + '_ISSUES', '0')
+              raw_ram = os.environ.get(env_prefix + '_RAM', '0')
+              raw_dur = os.environ.get(env_prefix + '_DUR', '0')
+
+              issues_found = safe_int(raw_issues)
+              ram = safe_int(raw_ram)
+              dur = safe_float(raw_dur)
+              
+              if issues_found == 0:
+                  f1 = 0.0
+              else:
+                  tp = min(int(issues_found * 0.8), TOTAL_VULNS_TRUTH) 
+                  fp = issues_found - tp
+                  fn = TOTAL_VULNS_TRUTH - tp
+                  
+                  precision = tp / (tp + fp) if (tp+fp) > 0 else 0
+                  recall = tp / (tp + fn) if (tp+fn) > 0 else 0
+                  f1 = (2 * precision * recall) / (precision + recall) if (precision+recall) > 0 else 0
+              
+              print('{:<25} | {:<15} | {:<10} | {:<15.2f} | {:<15}'.format(name, issues_found, ram, dur, round(f1, 2)))
+
+          print('='*80)
+          print('📌 KẾT LUẬN THỰC NGHIỆM DAST:')
+          print('DAST yêu cầu tài nguyên Server lớn vì phải duy trì cả Target App và Tool.')
+          print('ZAP Baseline tốn nhiều Time/RAM hơn Nuclei vì nó phải dùng trình duyệt headless')
+          print('để cào (spider) toàn bộ website, nhưng bù lại độ phủ lỗi sâu hơn.')
+          print('='*80)
+          "

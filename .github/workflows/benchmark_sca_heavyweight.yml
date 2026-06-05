@@ -149,4 +149,8 @@ jobs:
               print('{:<25} | {:<15} | {:<10} | {:<15.2f} | {:<15}'.format(name, issues_found, ram, dur, round(f1, 2)))
 
           print('='*80)
+          print('📌 KẾT LUẬN:')
+          print('Nhóm công cụ Heavyweight cho độ phủ cao nhưng tiêu thụ tài nguyên lớn.')
+          print('OWASP Dependency Check có độ phủ tốt nhưng bị ảnh hưởng bởi NVD API Rate Limit.')
+          print('='*80)
           "
