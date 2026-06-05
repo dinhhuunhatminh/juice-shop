@@ -91,12 +91,14 @@ jobs:
       - name: 5. Aqua Trivy (Standard)
         run: |
           cd target_app
-          wget -q https://github.com/aquasecurity/trivy/releases/download/v0.50.1/trivy_0.50.1_Linux-64bit.tar.gz
-          tar zxvf trivy_0.50.1_Linux-64bit.tar.gz >/dev/null 2>&1
+          echo "Cài đặt Trivy thông qua Install Script chính thức..."
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin >/dev/null 2>&1
           
-          /usr/bin/time -v ./trivy fs --scanners vuln --format json -o report.json . >/dev/null 2>&1 2> time_log.txt || true
+          echo "Đang quét..."
+          # Đã đổi từ ./trivy thành trivy vì công cụ đã được cài thẳng vào hệ thống
+          /usr/bin/time -v trivy fs --scanners vuln --format json -o report.json . >/dev/null 2>&1 2> time_log.txt || true
           
-          DUR=$(/usr/bin/time -f "%e" ./trivy fs --scanners vuln . >/dev/null 2>&1 | tail -n 1 || echo 10.5)
+          DUR=$(/usr/bin/time -f "%e" trivy fs --scanners vuln . >/dev/null 2>&1 | tail -n 1 || echo 10.5)
           RAM=$(grep "Maximum resident set" time_log.txt | awk '{print $6}')
           if [ -z "$RAM" ]; then RAM=524288; fi
           ISSUES=$(jq '[.Results[]? | .Vulnerabilities[]?] | length' report.json 2>/dev/null || echo 0)
